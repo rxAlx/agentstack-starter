@@ -25,13 +25,19 @@ spec:
             - containerPort: 8000
           env:
             - name: HOST
-              value: "0.0.0.0"
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
             - name: PORT
               value: "8000"
             - name: SERVER_URL
               value: "http://translator-svc:8000"
             - name: PLATFORM_URL
               value: "http://agentstack-server-svc:8333"
+            - name: PLATFORM_PUBLIC_HOST
+              value: "localhost:8333"
+            - name: PRODUCTION_MODE
+              value: "False"
             - name: AGENTSTACK_ADMIN_USER
               value: "admin"
             - name: AGENTSTACK_ADMIN_PASSWORD

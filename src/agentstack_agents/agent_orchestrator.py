@@ -69,13 +69,21 @@ def _llm_ext_metadata(model: str) -> dict:
     }
 
 
+def _platform_headers() -> dict:
+    base = {"Authorization": PLATFORM_AUTH}
+    public_host = os.getenv("PLATFORM_PUBLIC_HOST")
+    if public_host:
+        base["Host"] = public_host
+    return base
+
+
 async def _call_translator(text: str, model: str) -> str:
     """
     A2A agent-to-agent call:
       orchestrator → platform proxy → translator agent
     """
     async with httpx.AsyncClient(
-        headers={"Authorization": PLATFORM_AUTH},
+        headers=_platform_headers(),
         timeout=60.0,
     ) as http_client:
 
@@ -158,9 +166,11 @@ def _make_registration_client() -> PlatformClient:
     platform_url = os.getenv("PLATFORM_URL", "http://127.0.0.1:8333")
     admin_user = os.getenv("AGENTSTACK_ADMIN_USER", "admin")
     admin_password = os.getenv("AGENTSTACK_ADMIN_PASSWORD", "")
+    public_host = os.getenv("PLATFORM_PUBLIC_HOST")
+    extra_headers = {"Host": public_host} if public_host else {}
     if admin_password:
-        return PlatformClient(base_url=platform_url, auth=httpx.BasicAuth(admin_user, admin_password))
-    return PlatformClient(base_url=platform_url)
+        return PlatformClient(base_url=platform_url, auth=httpx.BasicAuth(admin_user, admin_password), headers=extra_headers)
+    return PlatformClient(base_url=platform_url, headers=extra_headers)
 
 
 def run():

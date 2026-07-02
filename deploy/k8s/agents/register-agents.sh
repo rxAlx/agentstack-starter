@@ -24,21 +24,18 @@ for p in json.load(sys.stdin).get('items', []):
 " 2>/dev/null)
 
   if [ -n "$existing_id" ]; then
-    # PATCH existing provider with new location
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" -u "$AUTH" \
-      -X PATCH "$PLATFORM/api/v1/providers/$existing_id" \
-      -H "Content-Type: application/json" \
-      -d "{\"location\": \"$location\"}")
-    echo "updated ($existing_id) → $http_code"
-  else
-    # CREATE new provider
-    result=$(curl -s -u "$AUTH" \
-      -X POST "$PLATFORM/api/v1/providers" \
-      -H "Content-Type: application/json" \
-      -d "{\"location\": \"$location\"}")
-    new_id=$(echo "$result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id','?'))" 2>/dev/null)
-    echo "created ($new_id)"
+    # DELETE old registration (PATCH does not support updating location)
+    curl -s -o /dev/null -u "$AUTH" -X DELETE "$PLATFORM/api/v1/providers/$existing_id"
+    echo -n "deleted ($existing_id), "
   fi
+
+  # CREATE with k8s service URL
+  result=$(curl -s -u "$AUTH" \
+    -X POST "$PLATFORM/api/v1/providers" \
+    -H "Content-Type: application/json" \
+    -d "{\"location\": \"$location\"}")
+  new_id=$(echo "$result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id','?'))" 2>/dev/null)
+  echo "created ($new_id)"
 }
 
 echo "Waiting for agents to be reachable..."

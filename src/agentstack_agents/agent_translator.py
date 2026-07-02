@@ -66,9 +66,11 @@ def _make_registration_client() -> PlatformClient:
     platform_url = os.getenv("PLATFORM_URL", "http://127.0.0.1:8333")
     admin_user = os.getenv("AGENTSTACK_ADMIN_USER", "admin")
     admin_password = os.getenv("AGENTSTACK_ADMIN_PASSWORD", "")
+    public_host = os.getenv("PLATFORM_PUBLIC_HOST")
+    extra_headers = {"Host": public_host} if public_host else {}
     if admin_password:
-        return PlatformClient(base_url=platform_url, auth=httpx.BasicAuth(admin_user, admin_password))
-    return PlatformClient(base_url=platform_url)
+        return PlatformClient(base_url=platform_url, auth=httpx.BasicAuth(admin_user, admin_password), headers=extra_headers)
+    return PlatformClient(base_url=platform_url, headers=extra_headers)
 
 
 def run():
