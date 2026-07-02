@@ -63,3 +63,27 @@ for p in json.load(sys.stdin).get('items', []):
     if name in ('llm_agent', 'translator', 'orchestrator', 'Chat'):
         print(f\"  {name:20} {p.get('state','?')}\")
 "
+
+echo ""
+echo "Removing duplicate registrations (keeps newest per agent)..."
+STALE_IDS=$(curl -s -u "$AUTH" "$PLATFORM/api/v1/providers" | \
+  python3 -c "
+import json, sys
+from collections import defaultdict
+groups = defaultdict(list)
+for p in json.load(sys.stdin).get('items', []):
+    name = (p.get('agent_card') or {}).get('name', '?')
+    if name in ('llm_agent', 'translator', 'orchestrator'):
+        groups[name].append(p)
+for providers in groups.values():
+    for p in sorted(providers, key=lambda x: x['created_at'], reverse=True)[1:]:
+        print(p['id'])
+")
+if [ -z "$STALE_IDS" ]; then
+  echo "  none found"
+else
+  echo "$STALE_IDS" | while read stale_id; do
+    curl -s -o /dev/null -u "$AUTH" -X DELETE "$PLATFORM/api/v1/providers/$stale_id"
+    echo "  deleted $stale_id"
+  done
+fi

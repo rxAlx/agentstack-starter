@@ -17,6 +17,7 @@ from a2a.utils.message import get_message_text
 from openai import AsyncOpenAI
 
 from agentstack_sdk.a2a.extensions.services.llm import LLMServiceExtensionServer, LLMServiceExtensionSpec
+from agentstack_sdk.a2a.extensions.services.platform import PlatformApiExtensionServer, PlatformApiExtensionSpec
 from agentstack_sdk.platform.client import PlatformClient
 from agentstack_sdk.server import Server
 from agentstack_sdk.server.context import RunContext
@@ -35,6 +36,7 @@ async def translator(
     input: Message,
     context: RunContext,
     llm: Annotated[LLMServiceExtensionServer, LLMServiceExtensionSpec.single_demand()],
+    _platform_api: Annotated[PlatformApiExtensionServer, PlatformApiExtensionSpec()],
 ):
     """Translates any text to the target language configured via TARGET_LANGUAGE env var."""
 

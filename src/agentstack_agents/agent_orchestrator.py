@@ -19,6 +19,7 @@ from a2a.utils.message import get_message_text
 from openai import AsyncOpenAI
 
 from agentstack_sdk.a2a.extensions.services.llm import LLMServiceExtensionServer, LLMServiceExtensionSpec
+from agentstack_sdk.a2a.extensions.services.platform import PlatformApiExtensionServer, PlatformApiExtensionSpec
 from agentstack_sdk.platform.client import PlatformClient
 from agentstack_sdk.server import Server
 from agentstack_sdk.server.context import RunContext
@@ -55,13 +56,13 @@ async def _discover_translator(http_client: httpx.AsyncClient) -> str | None:
     return None
 
 
-def _llm_ext_metadata(model: str) -> dict:
+def _llm_ext_metadata(api_base: str, api_key: str, model: str) -> dict:
     return {
         LLM_EXTENSION_URI: {
             "llm_fulfillments": {
                 "default": {
-                    "api_base": "{platform_url}/api/v1/openai",
-                    "api_key": "platform-agent-key",
+                    "api_base": api_base,
+                    "api_key": api_key,
                     "api_model": model,
                 }
             }
@@ -77,10 +78,12 @@ def _platform_headers() -> dict:
     return base
 
 
-async def _call_translator(text: str, model: str) -> str:
+async def _call_translator(text: str, api_base: str, api_key: str, model: str) -> str:
     """
     A2A agent-to-agent call:
       orchestrator → platform proxy → translator agent
+    Passes the same LLM fulfillment the orchestrator received so the translator
+    can call the same model provider without re-discovering credentials.
     """
     async with httpx.AsyncClient(
         headers=_platform_headers(),
@@ -100,7 +103,7 @@ async def _call_translator(text: str, model: str) -> str:
                     "messageId": str(uuid.uuid4()),
                     "role": "user",
                     "parts": [{"kind": "text", "text": text}],
-                    "metadata": _llm_ext_metadata(model),
+                    "metadata": _llm_ext_metadata(api_base, api_key, model),
                 }
             },
         }
@@ -124,6 +127,7 @@ async def orchestrator(
     input: Message,
     context: RunContext,
     llm: Annotated[LLMServiceExtensionServer, LLMServiceExtensionSpec.single_demand()],
+    _platform_api: Annotated[PlatformApiExtensionServer, PlatformApiExtensionSpec()],
 ):
     """
     Orchestrator agent. Delegates translation requests to the translator agent via A2A.
@@ -139,7 +143,7 @@ async def orchestrator(
 
     if _needs_translation(text):
         yield "🔀 Delegating to **translator** agent via A2A...\n\n"
-        translation = await _call_translator(text, fulfillment.api_model)
+        translation = await _call_translator(text, fulfillment.api_base, fulfillment.api_key, fulfillment.api_model)
         yield translation
 
     else:
