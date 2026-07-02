@@ -6,12 +6,15 @@ readme = "README.md"
 authors = [{ name = "BeeAI a Series of LF Projects, LLC" }]
 requires-python = ">=3.11,<4.0"
 dependencies = [
-    "agentstack-sdk>=0.6.1",
+    "agentstack-sdk>=0.7.1",
+    "openai>=1.0.0",
     "pyyaml>=6.0.2",
 ]
 
 [project.scripts]
 server = "agentstack_agents.agent:run"
+translator = "agentstack_agents.agent_translator:run"
+orchestrator = "agentstack_agents.agent_orchestrator:run"
 
 [build-system]
 requires = ["uv_build>=0.9.0,<0.10.0"]

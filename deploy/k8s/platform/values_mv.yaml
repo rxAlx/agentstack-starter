@@ -1,0 +1,70 @@
+# AgentStack 0.7.1 — minikube lab deployment
+# Deploy: helm upgrade --install agentstack oci://ghcr.io/i-am-bee/agentstack/chart/agentstack:0.7.1 \
+#           -n a2a -f values_mv.yaml
+
+# External agent registry
+externalRegistries:
+  public_github: "https://github.com/i-am-bee/agentstack@v0.7.1#path=agent-registry.yaml"
+
+# No managed agents (we register ours manually as unmanaged providers)
+providers: []
+
+encryptionKey: "FBR7pAfiwHkEWriPLmNUOUGABmPqVEWttH2NVqwTPHc="
+
+trustProxyHeaders: true
+
+# ── Authentication ─────────────────────────────────────────────────────────
+auth:
+  enabled: true
+  basic:
+    enabled: true       # keep basic auth for API agent registration
+
+  nextauthUrl: "http://localhost:8334"   # AgentStack UI (port-forwarded)
+  apiUrl:      "http://localhost:8333"   # AgentStack API (port-forwarded)
+
+# ── Keycloak (bundled, auto-deployed by the chart) ─────────────────────────
+keycloak:
+  enabled: true
+
+  # internalIssuerUrl: pod → pod via k8s DNS (agentstack-server uses this to validate tokens)
+  internalIssuerUrl: "http://keycloak:8336/realms/agentstack"
+  # publicIssuerUrl: browser → Keycloak via port-forward
+  publicIssuerUrl: "http://localhost:8336/realms/agentstack"
+
+  auth:
+    adminUser: admin
+    adminPassword: "keycloak-admin-password"
+    seedAgentstackUsers:
+      - username: admin
+        password: admin123
+        firstName: Admin
+        lastName: User
+        email: admin@beeai.dev
+        roles: ["agentstack-admin"]
+        enabled: true
+      - username: agent-user
+        password: agent123
+        firstName: Agent
+        lastName: User
+        email: agent@beeai.dev
+        roles: []
+        enabled: true
+
+# ── Fix for minikube: 'standard' StorageClass instead of 'local-path' ──────
+forge:
+  storage:
+    storageClass: standard
+
+# ── Post-deploy: Keycloak realm token lifetimes ─────────────────────────────
+# next-auth@5.0.0-beta.30 / openid-client@6.8.2 block HTTP token refresh.
+# The keycloak-provision job resets the realm on every helm upgrade, so run
+# this after each "helm upgrade" to extend token lifetime to 8h:
+#
+#   KC_TOKEN=$(curl -s -X POST http://localhost:8336/realms/master/protocol/openid-connect/token \
+#     -H "Content-Type: application/x-www-form-urlencoded" \
+#     -d "username=admin&password=keycloak-admin-password&grant_type=password&client_id=admin-cli" \
+#     | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
+#   curl -s -o /dev/null -w "%{http_code}" -X PUT http://localhost:8336/admin/realms/agentstack \
+#     -H "Authorization: Bearer $KC_TOKEN" \
+#     -H "Content-Type: application/json" \
+#     -d '{"accessTokenLifespan":28800,"ssoSessionIdleTimeout":28800,"ssoSessionMaxLifespan":86400,"clientSessionIdleTimeout":28800,"clientSessionMaxLifespan":86400}'
