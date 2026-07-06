@@ -56,6 +56,33 @@ async def _discover_translator(http_client: httpx.AsyncClient) -> str | None:
     return None
 
 
+async def _create_context_token(http_client: httpx.AsyncClient) -> str:
+    """
+    Mint a context token for the A2A hop to the translator.
+
+    The platform proxy only fulfills the platform_api extension when the caller
+    authenticates with a context token (Bearer) — with Basic auth the translator
+    fails with "Platform extension metadata was not provided".
+    """
+    resp = await http_client.post(f"{PLATFORM_URL}/api/v1/contexts", json={})
+    resp.raise_for_status()
+    context_id = resp.json()["id"]
+
+    resp = await http_client.post(
+        f"{PLATFORM_URL}/api/v1/contexts/{context_id}/token",
+        json={
+            "grant_global_permissions": {"llm": ["*"], "a2a_proxy": ["*"]},
+            "grant_context_permissions": {
+                "files": ["*"],
+                "vector_stores": ["*"],
+                "context_data": ["*"],
+            },
+        },
+    )
+    resp.raise_for_status()
+    return resp.json()["token"]
+
+
 def _llm_ext_metadata(api_base: str, api_key: str, model: str) -> dict:
     return {
         LLM_EXTENSION_URI: {
@@ -94,6 +121,8 @@ async def _call_translator(text: str, api_base: str, api_key: str, model: str) -
         if not translator_url:
             return "[translator agent not found or offline]"
 
+        context_token = await _create_context_token(http_client)
+
         payload = {
             "jsonrpc": "2.0",
             "method": "message/send",
@@ -108,15 +137,30 @@ async def _call_translator(text: str, api_base: str, api_key: str, model: str) -
             },
         }
 
-        resp = await http_client.post(translator_url, json=payload)
+        resp = await http_client.post(
+            translator_url,
+            json=payload,
+            headers={"Authorization": f"Bearer {context_token}"},
+        )
         resp.raise_for_status()
 
+        task = resp.json().get("result", {})
         translation = ""
-        for msg in resp.json().get("result", {}).get("history", []):
+        for msg in task.get("history", []):
             if msg.get("role") == "agent":
                 for part in msg.get("parts", []):
                     if part.get("kind") == "text":
                         translation += part["text"]
+
+        if not translation and task.get("status", {}).get("state") == "failed":
+            status_msg = task.get("status", {}).get("message") or {}
+            error_text = "".join(
+                part.get("text", "")
+                for part in status_msg.get("parts", [])
+                if part.get("kind") == "text"
+            )
+            return f"[translator task failed: {error_text or 'unknown error'}]"
+
         return translation
 
 
