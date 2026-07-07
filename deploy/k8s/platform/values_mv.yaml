@@ -2,9 +2,11 @@
 # Deploy: helm upgrade --install agentstack oci://ghcr.io/i-am-bee/agentstack/chart/agentstack:0.7.1 \
 #           -n a2a -f values_mv.yaml
 
-# External agent registry
-externalRegistries:
-  public_github: "https://github.com/i-am-bee/agentstack@v0.7.1#path=agent-registry.yaml"
+# External agent registry disabled: it seeds the default agents (Chat, Canvas,
+# RAG, Form) every 30s; we only want our manually registered agents in the UI.
+externalRegistries: {
+# public_github: "https://github.com/i-am-bee/agentstack@v0.7.1#path=agent-registry.yaml" (esto es para añadir los agentes por defecto de AgentStack: RAG, Chat Q&A...)
+}
 
 # No managed agents (we register ours manually as unmanaged providers)
 providers: []

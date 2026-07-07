@@ -12,7 +12,13 @@ import os
 from typing import Annotated
 
 import httpx
-from a2a.types import Message
+from a2a.types import (
+    AgentSkill,
+    HTTPAuthSecurityScheme,
+    Message,
+    OpenIdConnectSecurityScheme,
+    SecurityScheme,
+)
 from a2a.utils.message import get_message_text
 from openai import AsyncOpenAI
 
@@ -31,7 +37,52 @@ _SYSTEM_PROMPT = (
     f"Output ONLY the translation. No explanations, no notes, no original text."
 )
 
-@server.agent()
+# Security declared in the agent card (A2A `securitySchemes` / `security`).
+# This is DECLARATIVE: it tells clients how to authenticate at the official
+# door (the platform A2A proxy); enforcement happens at that proxy, not here.
+_KEYCLOAK_OIDC_URL = os.getenv(
+    "KEYCLOAK_OIDC_URL",
+    "http://localhost:8336/realms/agentstack/.well-known/openid-configuration",
+)
+
+_SECURITY_SCHEMES = {
+    "contextToken": SecurityScheme(
+        root=HTTPAuthSecurityScheme(
+            scheme="bearer",
+            bearer_format="JWT",
+            description=(
+                "AgentStack context token issued via "
+                "POST /api/v1/contexts/{id}/token; send as 'Authorization: Bearer <token>' "
+                "to the platform A2A proxy."
+            ),
+        )
+    ),
+    "keycloakOpenId": SecurityScheme(
+        root=OpenIdConnectSecurityScheme(
+            open_id_connect_url=_KEYCLOAK_OIDC_URL,
+            description="Platform identity provider (Keycloak realm 'agentstack').",
+        )
+    ),
+}
+
+_SKILLS = [
+    AgentSkill(
+        id="translate",
+        name="Translate text",
+        description=f"Translates any text to {TARGET_LANGUAGE} (configured via TARGET_LANGUAGE).",
+        tags=["translation", "text"],
+        examples=["Translate: Good morning, my friend!"],
+        input_modes=["text"],
+        output_modes=["text"],
+    )
+]
+
+
+@server.agent(
+    security_schemes=_SECURITY_SCHEMES,
+    security=[{"contextToken": []}, {"keycloakOpenId": []}],
+    skills=_SKILLS,
+)
 async def translator(
     input: Message,
     context: RunContext,

@@ -25,9 +25,7 @@ spec:
             - containerPort: 8000
           env:
             - name: HOST
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
+              value: "0.0.0.0"   # safe now that self-registration is off; enables kubectl port-forward for demos
             - name: PORT
               value: "8000"
             - name: SERVER_URL
