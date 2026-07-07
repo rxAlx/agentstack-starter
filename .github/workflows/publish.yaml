@@ -1,4 +1,4 @@
-name: Build and Publish Agent Images. Also adds the agents to the Agent Stack registry.
+name: Build and Publish Agent Images. Also automatically adds the agents to the Agent Stack registry.
 
 on:
   push:
