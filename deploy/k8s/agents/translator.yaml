@@ -37,7 +37,7 @@ spec:
             - name: PLATFORM_PUBLIC_HOST
               value: "localhost:8333"
             - name: PRODUCTION_MODE
-              value: "False"
+              value: "True"    # self-registration off; register once via register-agents.sh (stable svc URL)
             - name: AGENTSTACK_ADMIN_USER
               value: "admin"
             - name: AGENTSTACK_ADMIN_PASSWORD
