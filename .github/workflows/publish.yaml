@@ -1,4 +1,4 @@
-name: Build and Publish Agent Images
+name: Build and Publish Agent Images. Also adds the agents to the Agent Stack registry.
 
 on:
   push:
@@ -37,6 +37,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Install Agent Stack CLI
+        run: pip install agentstack-cli
+
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -45,10 +53,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Required for multi-platform builds through the Agent Stack CLI:
+      # the containerd image store keeps the full manifest list locally,
+      # so we can retag and push every tag after a single build.
+      - name: Set up Docker
+        uses: docker/setup-docker-action@v4
+        with:
+          daemon-config: '{"features": {"containerd-snapshotter": true}}'
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Extract metadata
+      - name: Extract metadata (tags)
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -60,14 +76,34 @@ jobs:
             type=sha,prefix=sha-
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.agent }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.agent }}
-          platforms: linux/amd64,linux/arm64
+      # agentstack client-side-build takes a single --tag, so we build once
+      # with the first tag and retag/push the rest afterwards.
+      - name: Pick primary tag
+        id: primary_tag
+        run: |
+          TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # client-side-build is local-only (no platform login needed). Unlike a
+      # plain docker build, it runs the agent container to extract its agent
+      # card and embeds it as an OCI label, which is what the Agent Stack
+      # platform needs to recognize the image as an agent provider.
+      - name: Build with Agent Stack CLI
+        run: |
+          agentstack client-side-build . \
+            --dockerfile ${{ matrix.dockerfile }} \
+            --tag "${{ steps.primary_tag.outputs.tag }}" \
+            --no-import \
+            --multi-platform \
+            --no-push
+
+      - name: Push all tags
+        if: github.event_name != 'pull_request'
+        run: |
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            if [ "$tag" != "${{ steps.primary_tag.outputs.tag }}" ]; then
+              docker tag "${{ steps.primary_tag.outputs.tag }}" "$tag"
+            fi
+            docker push "$tag"
+          done <<< "${{ steps.meta.outputs.tags }}"
