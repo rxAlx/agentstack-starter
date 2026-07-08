@@ -6,9 +6,10 @@ name: Build and Publish Agent Images
 #
 #   git tag translator_v1.0.0 && git push origin translator_v1.0.0
 #
-# Only the agent named in the tag is built. Published image tags:
-#   ghcr.io/<owner>/agentstack-starter/<agent>:<version>        (1.0.0)
-#   ghcr.io/<owner>/agentstack-starter/<agent>:<major>.<minor>  (1.0)
+# Only the agent named in the tag is built. Published image tags mirror
+# the git tag version, v prefix included:
+#   ghcr.io/<owner>/agentstack-starter/<agent>:v<version>        (v1.0.0)
+#   ghcr.io/<owner>/agentstack-starter/<agent>:v<major>.<minor>  (v1.0)
 #   ghcr.io/<owner>/agentstack-starter/<agent>:latest
 
 on:
@@ -54,17 +55,17 @@ jobs:
           # GHCR requires lowercase repository names; github.repository_owner
           # keeps the original casing (rxAlx), so normalize it here.
           IMAGE="${IMAGE_PREFIX,,}/${AGENT}"
-          TAGS="${IMAGE}:${VERSION}"
-          # 1.0.0 also gets a floating 1.0 tag; a plain 1.0 tag doesn't duplicate itself
+          TAGS="${IMAGE}:v${VERSION}"
+          # v1.0.0 also gets a floating v1.0 tag; a plain v1.0 tag doesn't duplicate itself
           if [[ "$VERSION" == *.*.* ]]; then
-            TAGS="${TAGS} ${IMAGE}:${VERSION%.*}"
+            TAGS="${TAGS} ${IMAGE}:v${VERSION%.*}"
           fi
           TAGS="${TAGS} ${IMAGE}:latest"
 
           {
             echo "agent=$AGENT"
             echo "dockerfile=$DOCKERFILE"
-            echo "primary=${IMAGE}:${VERSION}"
+            echo "primary=${IMAGE}:v${VERSION}"
             echo "tags=$TAGS"
           } >> "$GITHUB_OUTPUT"
           echo "Building $AGENT -> $TAGS"
