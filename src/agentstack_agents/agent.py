@@ -2,10 +2,11 @@ import os
 from typing import Annotated
 
 import httpx
-from a2a.types import Message, Role
+from a2a.types import AgentSkill, Message, Role
 from a2a.utils.message import get_message_text
 from openai import AsyncOpenAI
 
+from agentstack_agents.card_security import SECURITY, SECURITY_SCHEMES
 from agentstack_sdk.a2a.extensions.services.llm import LLMServiceExtensionServer, LLMServiceExtensionSpec
 from agentstack_sdk.a2a.extensions.services.platform import PlatformApiExtensionServer, PlatformApiExtensionSpec
 from agentstack_sdk.platform.client import PlatformClient
@@ -16,8 +17,27 @@ server = Server()
 
 SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are a helpful assistant.")
 
+_SKILLS = [
+    AgentSkill(
+        id="chat",
+        name="Chat",
+        description=(
+            "Conversational assistant with history, powered by the platform-configured LLM "
+            "(system prompt set via SYSTEM_PROMPT)."
+        ),
+        tags=["chat", "llm"],
+        examples=["Explain the A2A protocol in one paragraph."],
+        input_modes=["text"],
+        output_modes=["text"],
+    )
+]
 
-@server.agent()
+
+@server.agent(
+    security_schemes=SECURITY_SCHEMES,
+    security=SECURITY,
+    skills=_SKILLS,
+)
 async def llm_agent(
     input: Message,
     context: RunContext,

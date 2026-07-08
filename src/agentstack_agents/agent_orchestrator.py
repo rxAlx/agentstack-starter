@@ -14,10 +14,11 @@ import uuid
 from typing import Annotated
 
 import httpx
-from a2a.types import Message
+from a2a.types import AgentSkill, Message
 from a2a.utils.message import get_message_text
 from openai import AsyncOpenAI
 
+from agentstack_agents.card_security import SECURITY, SECURITY_SCHEMES
 from agentstack_sdk.a2a.extensions.services.llm import LLMServiceExtensionServer, LLMServiceExtensionSpec
 from agentstack_sdk.a2a.extensions.services.platform import PlatformApiExtensionServer, PlatformApiExtensionSpec
 from agentstack_sdk.platform.client import PlatformClient
@@ -166,7 +167,36 @@ async def _call_translator(text: str, api_base: str, api_key: str, model: str) -
 
 # ── agent ────────────────────────────────────────────────────────────────────
 
-@server.agent()
+_SKILLS = [
+    AgentSkill(
+        id="delegate-translation",
+        name="Delegate translation via A2A",
+        description=(
+            "Detects translation requests and delegates them to the translator agent "
+            "through the platform A2A proxy (discovery + message/send with a context token)."
+        ),
+        tags=["orchestration", "a2a", "delegation", "translation"],
+        examples=["Translate: Good morning, my friend!"],
+        input_modes=["text"],
+        output_modes=["text"],
+    ),
+    AgentSkill(
+        id="chat",
+        name="General chat",
+        description="Answers any non-translation request directly with the platform-configured LLM.",
+        tags=["chat", "llm"],
+        examples=["What is the A2A protocol?"],
+        input_modes=["text"],
+        output_modes=["text"],
+    ),
+]
+
+
+@server.agent(
+    security_schemes=SECURITY_SCHEMES,
+    security=SECURITY,
+    skills=_SKILLS,
+)
 async def orchestrator(
     input: Message,
     context: RunContext,

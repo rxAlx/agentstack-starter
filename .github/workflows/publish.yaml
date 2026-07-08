@@ -1,14 +1,20 @@
-name: Build and Publish Agent Images. Also automatically adds the agents to the Agent Stack registry.
+name: Build and Publish Agent Images
+
+# Images are ONLY built when a release tag for a specific agent is pushed.
+# Tag format:  <agent>_v<major>.<minor>[.<patch>]
+#   e.g.  translator_v1.0.0   orchestrator_v0.2.0   llm-agent_v1.1.0
+#
+#   git tag translator_v1.0.0 && git push origin translator_v1.0.0
+#
+# Only the agent named in the tag is built. Published image tags:
+#   ghcr.io/<owner>/agentstack-starter/<agent>:<version>        (1.0.0)
+#   ghcr.io/<owner>/agentstack-starter/<agent>:<major>.<minor>  (1.0)
+#   ghcr.io/<owner>/agentstack-starter/<agent>:latest
 
 on:
   push:
-    branches:
-      - main
     tags:
-      - 'v*'
-  pull_request:
-    branches:
-      - main
+      - '*_v*.*'
 
 env:
   REGISTRY: ghcr.io
@@ -16,24 +22,51 @@ env:
 
 jobs:
   build:
-    name: Build ${{ matrix.agent }}
+    name: Build ${{ github.ref_name }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
 
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - agent: llm-agent
-            dockerfile: docker/Dockerfile.llm-agent
-          - agent: translator
-            dockerfile: docker/Dockerfile.translator
-          - agent: orchestrator
-            dockerfile: docker/Dockerfile.orchestrator
-
     steps:
+      - name: Parse release tag
+        id: parse
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          AGENT="${TAG%_v*}"
+          VERSION="${TAG##*_v}"
+          AGENT="${AGENT//_/-}"   # accept llm_agent_v1.0.0 as alias of llm-agent_v1.0.0
+
+          case "$AGENT" in
+            llm-agent)    DOCKERFILE=docker/Dockerfile.llm-agent ;;
+            translator)   DOCKERFILE=docker/Dockerfile.translator ;;
+            orchestrator) DOCKERFILE=docker/Dockerfile.orchestrator ;;
+            *)
+              echo "::error::Unknown agent '$AGENT' in tag '$TAG' (expected llm-agent | translator | orchestrator)"
+              exit 1 ;;
+          esac
+
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::Version '$VERSION' in tag '$TAG' is not <major>.<minor>[.<patch>]"
+            exit 1
+          fi
+
+          IMAGE="${IMAGE_PREFIX}/${AGENT}"
+          TAGS="${IMAGE}:${VERSION}"
+          # 1.0.0 also gets a floating 1.0 tag; a plain 1.0 tag doesn't duplicate itself
+          if [[ "$VERSION" == *.*.* ]]; then
+            TAGS="${TAGS} ${IMAGE}:${VERSION%.*}"
+          fi
+          TAGS="${TAGS} ${IMAGE}:latest"
+
+          {
+            echo "agent=$AGENT"
+            echo "dockerfile=$DOCKERFILE"
+            echo "primary=${IMAGE}:${VERSION}"
+            echo "tags=$TAGS"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building $AGENT -> $TAGS"
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -46,7 +79,6 @@ jobs:
         run: pip install agentstack-cli
 
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -64,26 +96,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Extract metadata (tags)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.agent }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-
-      # agentstack client-side-build takes a single --tag, so we build once
-      # with the first tag and retag/push the rest afterwards.
-      - name: Pick primary tag
-        id: primary_tag
-        run: |
-          TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
       # client-side-build is local-only (no platform login needed). Unlike a
       # plain docker build, it runs the agent container to extract its agent
       # card and embeds it as an OCI label, which is what the Agent Stack
@@ -91,19 +103,17 @@ jobs:
       - name: Build with Agent Stack CLI
         run: |
           agentstack client-side-build . \
-            --dockerfile ${{ matrix.dockerfile }} \
-            --tag "${{ steps.primary_tag.outputs.tag }}" \
+            --dockerfile ${{ steps.parse.outputs.dockerfile }} \
+            --tag "${{ steps.parse.outputs.primary }}" \
             --no-import \
             --multi-platform \
             --no-push
 
       - name: Push all tags
-        if: github.event_name != 'pull_request'
         run: |
-          while IFS= read -r tag; do
-            [ -z "$tag" ] && continue
-            if [ "$tag" != "${{ steps.primary_tag.outputs.tag }}" ]; then
-              docker tag "${{ steps.primary_tag.outputs.tag }}" "$tag"
+          for tag in ${{ steps.parse.outputs.tags }}; do
+            if [ "$tag" != "${{ steps.parse.outputs.primary }}" ]; then
+              docker tag "${{ steps.parse.outputs.primary }}" "$tag"
             fi
             docker push "$tag"
-          done <<< "${{ steps.meta.outputs.tags }}"
+          done
