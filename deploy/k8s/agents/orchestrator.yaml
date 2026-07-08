@@ -19,7 +19,7 @@ spec:
         - name: orchestrator
           # GHCR (CI/CD): ghcr.io/rxalx/agentstack-starter/orchestrator:latest
           # Local minikube: agentstack/orchestrator:local  +  imagePullPolicy: Never
-          image: ghcr.io/rxalx/agentstack-starter/orchestrator:latest
+          image: ghcr.io/rxalx/agentstack-starter/orchestrator:v1.0.0
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

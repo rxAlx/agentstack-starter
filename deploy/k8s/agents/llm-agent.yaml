@@ -19,7 +19,7 @@ spec:
         - name: llm-agent
           # GHCR (CI/CD): ghcr.io/rxalx/agentstack-starter/llm-agent:latest
           # Local minikube: agentstack/llm-agent:local  +  imagePullPolicy: Never
-          image: ghcr.io/rxalx/agentstack-starter/llm-agent:latest
+          image: ghcr.io/rxalx/agentstack-starter/llm-agent:v1.0.0
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

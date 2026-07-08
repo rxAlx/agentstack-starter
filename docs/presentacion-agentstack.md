@@ -318,7 +318,7 @@ lo que cambia es el activo: de datos a capacidades (agentes).
 | Espacio de datos (FIWARE/IDSA)     | Espacio de agentes (este laboratorio)                    |
 | ---------------------------------- | -------------------------------------------------------- |
 | Context Broker / servicio de datos | AgentStack server + agentes A2A                          |
-| Entidades NGSI-LD / datasets       | Agentes y sus *skills*                                |
+| Entidades NGSI-LD / datasets       | Agentes y sus*skills*                                  |
 | Smart Data Models                  | **Agent Cards** (`/.well-known/agent-card.json`) |
 | Catálogo federado                 | Registro de providers (`/api/v1/providers`)            |
 | APISIX como PEP                    | (siguiente fase: gateway delante del proxy A2A)          |
@@ -403,12 +403,7 @@ Visores de Agent Card sin CLI:
   # abrir http://localhost:8090 y conectar a:  http://translator-svc:8000
   # (DNS interno del clúster — el inspector corre dentro, sin auth)
   ```
-
   Nota: el chat del inspector llega al agente sin las extensiones de la
   plataforma, así que el agente responderá "No LLM model configured" — para
   chat usar la UI de AgentStack; el inspector brilla para card + validación
-  de spec + ver el JSON-RPC crudo (ojo: 8080 local suele estar ocupado por
-  pgAdmin, por eso usamos 8090).
-
-```
-```
+  de spec + ver el JSON-RPC crudo.

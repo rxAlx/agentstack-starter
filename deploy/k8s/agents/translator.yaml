@@ -19,7 +19,7 @@ spec:
         - name: translator
           # GHCR (CI/CD): ghcr.io/rxalx/agentstack-starter/translator:latest
           # Local minikube: agentstack/translator:local  +  imagePullPolicy: Never
-          image: ghcr.io/rxalx/agentstack-starter/translator:latest
+          image: ghcr.io/rxalx/agentstack-starter/translator:v1.0.0
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
