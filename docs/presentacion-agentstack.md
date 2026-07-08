@@ -262,7 +262,64 @@ credenciales verificables.
 
 ---
 
-## Diapositiva 12 — La frontera de confianza: el PEP y la puerta trasera
+## Diapositiva 12 — Anatomía de una petición doble: el flujo A2A al desnudo
+
+**Mensaje clave:** una sola petición del usuario ("traduce X y además contesta Y")
+se convierte en un plan y **dos delegaciones A2A** — y cada paso es un HTTP
+observable. Nada de magia: plan → discover → delegate.
+
+Agente: **orchestrator_v1** (`src/agentstack_agents/orchestrator_v1.py`), que
+loguea cada GET/POST de su flujo (`A2A_TRACE=1`).
+
+Petición de ejemplo:
+
+```
+"Translate: 'The stars look wonderful tonight'.
+ Also, answer this question in one sentence: what is Kubernetes?"
+```
+
+Trace real capturado en el laboratorio (`kubectl logs deploy/orchestrator-v1 -n a2a`):
+
+```
+# 1. PLAN — un LLM descompone la petición en subtareas (gateway OpenAI de la plataforma)
+[A2A trace] → POST .../api/v1/openai/chat/completions
+[A2A trace] ← 200
+[A2A trace] plan: translate='The stars look wonderful tonight' answer='what is Kubernetes?'
+
+# 2. DISCOVER — catálogo de la plataforma: ¿qué agentes hay y dónde? (no es A2A: es el registry)
+[A2A trace] → GET  .../api/v1/providers
+[A2A trace] ← 200
+
+# 3. CREDENCIAL — context token nuevo para los saltos (delegación explícita)
+[A2A trace] → POST .../api/v1/contexts                        ← 201
+[A2A trace] → POST .../api/v1/contexts/{id}/token             ← 200
+
+# 4. DELEGATE ×2 — un message/send A2A por subtarea, vía el proxy (PEP)
+[A2A trace] → POST .../api/v1/a2a/49a37b0e-...   # → translator   ← 200
+[A2A trace] → POST .../api/v1/a2a/2928b061-...   # → llm_agent    ← 200
+```
+
+Respuesta al usuario (un solo Task, dos resultados combinados):
+
+```
+🔀 Delegating to **translator** agent via A2A...
+Las estrellas se ven maravillosas esta noche.
+
+🔀 Delegating to **llm_agent** agent via A2A...
+Kubernetes (also known as K8s) is an open-source container orchestration system...
+```
+
+**Nota del ponente (qué es A2A y qué es plataforma):** los `message/send` del
+paso 4 son protocolo A2A puro — funcionarían igual contra un agente de otro
+fabricante. El planner (1), el catálogo (2) y los context tokens (3) son los
+servicios del "espacio" (AgentStack); en un espacio de datos serían el
+razonamiento del participante, el catálogo federado y la credencial emitida por
+el trust anchor. Cada subtarea llega a su especialista con una credencial
+trazable y por la puerta oficial.
+
+---
+
+## Diapositiva 13 — La frontera de confianza: el PEP y la puerta trasera
 
 **Mensaje clave:** el proxy protege la puerta oficial — pero si el servicio de
 detrás es alcanzable por otra vía, la política es decorativa (por ejemplo desde dentro del namespace de kubernetes).
@@ -310,7 +367,7 @@ la puerta y las NetworkPolicies deben proteger a los agentes.
 
 ---
 
-## Diapositiva 13 — De espacios de datos a espacios de agentes
+## Diapositiva 14 — De espacios de datos a espacios de agentes
 
 **Mensaje clave:** la arquitectura de un espacio de datos se traslada casi 1:1;
 lo que cambia es el activo: de datos a capacidades (agentes).
@@ -330,7 +387,7 @@ y A2A **es** HTTP. La única pieza realmente nueva son las políticas por skill.
 
 ---
 
-## Diapositiva 14 — Estándares y hoja de ruta
+## Diapositiva 15 — Estándares y hoja de ruta
 
 **Mensaje clave:** no es una idea aislada — los organismos de los espacios de
 datos ya están incorporando agentes.
@@ -349,7 +406,7 @@ Hoja de ruta del laboratorio:
 
 ---
 
-## Diapositiva 15 — Lecciones aprendidas y conclusiones
+## Diapositiva 16 — Lecciones aprendidas y conclusiones
 
 **Mensaje clave:** el valor de un laboratorio real: los problemas que no salen
 en los tutoriales.
@@ -380,12 +437,15 @@ kubectl port-forward svc/translator-svc        8001:8000 -n a2a &
 # 2. Si el server se reinició desde la última vez: repoblar catálogo de modelos
 bash deploy/k8s/platform/recreate-model-provider.sh
 
-# 3. Verificar que los 3 agentes están online
+# 3. Verificar que los 4 agentes están online (llm_agent, translator, orchestrator, orchestrator_v1)
 curl -s -u admin:admin123 http://localhost:8333/api/v1/providers | \
   jq -r '.items[] | "\(.state)\t\(.agent_card.name)"'
 
 # 4. Ensayo completo del protocolo (todas las fases en un comando)
 uv run python examples/test_a2a_protocol.py
+
+# 5. Para la diapo 12 (petición doble): trace en vivo del orchestrator_v1
+kubectl logs -f deploy/orchestrator-v1 -n a2a | grep "A2A trace"
 ```
 
 Visores de Agent Card sin CLI:

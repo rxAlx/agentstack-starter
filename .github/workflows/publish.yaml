@@ -39,11 +39,12 @@ jobs:
           AGENT="${AGENT//_/-}"   # accept llm_agent_v1.0.0 as alias of llm-agent_v1.0.0
 
           case "$AGENT" in
-            llm-agent)    DOCKERFILE=docker/Dockerfile.llm-agent ;;
-            translator)   DOCKERFILE=docker/Dockerfile.translator ;;
-            orchestrator) DOCKERFILE=docker/Dockerfile.orchestrator ;;
+            llm-agent)       DOCKERFILE=docker/Dockerfile.llm-agent ;;
+            translator)      DOCKERFILE=docker/Dockerfile.translator ;;
+            orchestrator)    DOCKERFILE=docker/Dockerfile.orchestrator ;;
+            orchestrator-v1) DOCKERFILE=docker/Dockerfile.orchestrator-v1 ;;
             *)
-              echo "::error::Unknown agent '$AGENT' in tag '$TAG' (expected llm-agent | translator | orchestrator)"
+              echo "::error::Unknown agent '$AGENT' in tag '$TAG' (expected llm-agent | translator | orchestrator | orchestrator-v1)"
               exit 1 ;;
           esac
 

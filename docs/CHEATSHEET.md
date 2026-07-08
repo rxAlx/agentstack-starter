@@ -33,6 +33,12 @@ for p in json.load(sys.stdin)['items']:
 "
 ```
 
+Registrar un nuevo provider (en este caso registro el orchestrator-v1)
+
+```Shell
+curl -s -u admin:admin123 -X POST http://localhost:8333/api/v1/providers -H "Content-Type: application/json" -d '{"location": "http://orchestrator-v1-svc:8000#orchestrator_v1"}' | python3 -c "import json,sys; d=json.load(sys.stdin); print('provider id:', d.get('id'), '| state:', d.get('state'))"
+```
+
 ## 2. Ver la Agent Card de un agente
 
 ```bash
@@ -302,6 +308,7 @@ curl -s -X POST "$PLATFORM/api/v1/a2a/$PROVIDER_ID/"   -H "Authorization: Bearer
 Para continuar una conversación, debo reutilizar en el siguiente mensaje los campos que devolvió la Task anterior: `"contextId"` (hilo de conversación) y opcionalmente `"taskId"` (continuar esa task concreta). Ambos van como campos del objeto `message`, al lado de `messageId`. Ejemplo:
 
 ```
+
 ```
 
 ---

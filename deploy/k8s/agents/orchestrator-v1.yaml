@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator-v1
+  namespace: a2a
+  labels:
+    app: orchestrator-v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orchestrator-v1
+  template:
+    metadata:
+      labels:
+        app: orchestrator-v1
+    spec:
+      containers:
+        - name: orchestrator-v1
+          # GHCR (CI/CD): release with `git tag orchestrator-v1_v1.0.0 && git push origin orchestrator-v1_v1.0.0`
+          # Local minikube test: ghcr.io/rxalx/agentstack-starter/orchestrator-v1:dev + imagePullPolicy: IfNotPresent
+          image: ghcr.io/rxalx/agentstack-starter/orchestrator-v1:v1.0.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: HOST
+              value: "0.0.0.0"   # safe now that self-registration is off; enables kubectl port-forward for demos
+            - name: PORT
+              value: "8000"
+            - name: SERVER_URL
+              value: "http://orchestrator-v1-svc:8000"
+            - name: PLATFORM_URL
+              value: "http://agentstack-server-svc:8333"
+            - name: PLATFORM_PUBLIC_HOST
+              value: "localhost:8333"
+            - name: PRODUCTION_MODE
+              value: "True"    # self-registration off; register once via register-agents.sh (stable svc URL)
+            - name: A2A_TRACE
+              value: "1"       # log every GET/POST of the A2A flow to stdout (kubectl logs)
+            - name: AGENTSTACK_ADMIN_USER
+              value: "admin"
+            - name: AGENTSTACK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agentstack-agents-secret
+                  key: admin-password
+          readinessProbe:
+            httpGet:
+              path: /.well-known/agent-card.json
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator-v1-svc
+  namespace: a2a
+spec:
+  selector:
+    app: orchestrator-v1
+  ports:
+    - port: 8000
+      targetPort: 8000
