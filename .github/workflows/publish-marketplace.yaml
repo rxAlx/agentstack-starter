@@ -38,7 +38,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: docker/Dockerfile.anp-registry
+          file: docker/Dockerfile.anp-marketplace
           push: true
           tags: ${{ steps.parse.outputs.tags }}
           platforms: linux/amd64
