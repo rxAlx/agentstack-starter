@@ -15,7 +15,10 @@ name: Build and Publish Agent Images
 on:
   push:
     tags:
-      - '*_v*.*'
+      - 'translator_v*.*'
+      - 'llm-agent_v*.*'
+      - 'orchestrator_v*.*'
+      - 'orchestrator-v1_v*.*'
 
 env:
   REGISTRY: ghcr.io
