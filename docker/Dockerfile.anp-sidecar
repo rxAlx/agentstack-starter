@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir \
     pydantic
 
 # Copy only the sidecar code (no local ANP repo needed)
-COPY anp/anp-sidecar.py .
+COPY anp/anp-sidecar.py sidecar.py
 
 EXPOSE 8000
 
