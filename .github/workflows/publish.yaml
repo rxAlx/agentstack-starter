@@ -43,9 +43,8 @@ jobs:
             translator)      DOCKERFILE=docker/Dockerfile.translator ;;
             orchestrator)    DOCKERFILE=docker/Dockerfile.orchestrator ;;
             orchestrator-v1) DOCKERFILE=docker/Dockerfile.orchestrator-v1 ;;
-            anp-sidecar)      DOCKERFILE=docker/Dockerfile.anp-sidecar ;;
             *)
-              echo "::error::Unknown agent '$AGENT' in tag '$TAG' (expected llm-agent | translator | orchestrator | orchestrator-v1 | anp-sidecar)"
+              echo "::error::Unknown agent '$AGENT' in tag '$TAG' (expected llm-agent | translator | orchestrator | orchestrator-v1)"
               exit 1 ;;
           esac
 
