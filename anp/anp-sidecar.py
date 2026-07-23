@@ -173,33 +173,46 @@ async def serve_ad():
     }
     return ad
 
-@app.post("/a2a-proxy/{path:path}")
+@app.api_route("/a2a-proxy/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
 async def proxy_to_a2a(path: str, request: Request):
     """
     Proxy A2A requests to the main agent container.
-    This allows ANP-authenticated agents to call A2A endpoints.
+    Supports all HTTP methods.
     """
     body = await request.body()
     headers = dict(request.headers)
     
     # Remove hop-by-hop headers
-    for h in ["host", "content-length", "connection"]:
+    for h in ["host", "content-length", "connection", "transfer-encoding"]:
         headers.pop(h, None)
     
     target_url = f"http://{MAIN_AGENT_HOST}:{MAIN_AGENT_PORT}/{path}"
     
     async with httpx.AsyncClient() as client:
         response = await client.request(
-            method=request.method,
+            method=request.method,  # Forward the original method (GET, POST, etc.)
             url=target_url,
             headers=headers,
             content=body,
             timeout=30.0,
+            follow_redirects=True,
         )
-        return JSONResponse(
-            content=response.json() if response.headers.get("content-type", "").startswith("application/json") else {"response": response.text},
-            status_code=response.status_code,
-        )
+        
+        # Return response preserving status code and content type
+        content_type = response.headers.get("content-type", "application/json")
+        if content_type.startswith("application/json"):
+            return JSONResponse(
+                content=response.json(),
+                status_code=response.status_code,
+                headers=dict(response.headers),
+            )
+        else:
+            from fastapi.responses import Response
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+            )
 
 # =============================================================================
 # REGISTRY REGISTRATION
