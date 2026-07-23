@@ -308,6 +308,8 @@ async def _call_agent_anp(
     # Build fixed hostname from DID
     did = agent_info.get("did", "")
     import re
+    from urllib.parse import urlparse, urlunparse
+    
     did_match = re.match(r'did:wba:([^:]+)', did)
     if not did_match:
         return "[invalid DID format]"
@@ -321,7 +323,7 @@ async def _call_agent_anp(
     else:
         fixed_hostname = did_hostname
     
-    # Step 1: Fetch agent card to get the actual A2A URL
+    # Step 1: Fetch agent card from sidecar proxy
     agent_card_url = f"http://{fixed_hostname}:8001/a2a-proxy/.well-known/agent-card.json"
     trace.info("Fetching agent card from: %s", agent_card_url)
     
@@ -337,21 +339,36 @@ async def _call_agent_anp(
         
         trace.info("A2A endpoint from agent card: %s", a2a_url)
     
-    # Step 2: Convert to proxy URL (port 8000 -> 8001, fix hostname)
-    proxy_a2a_url = a2a_url.replace(":8000", ":8001")
-    original_host = a2a_url.split("//")[1].split(":")[0]
-    proxy_a2a_url = proxy_a2a_url.replace(original_host, fixed_hostname)
+    # Step 2: Convert to sidecar proxy URL
+    # Original: http://translator-with-sidecar-svc:8000/jsonrpc/
+    # Target:   http://translator-with-sidecar-svc.a2a.svc.cluster.local:8001/a2a-proxy/jsonrpc/
+    parsed = urlparse(a2a_url)
+    
+    # Use fixed hostname with port 8001
+    new_netloc = f"{fixed_hostname}:8001"
+    
+    # Prepend /a2a-proxy to the path
+    new_path = f"/a2a-proxy{parsed.path}"
+    
+    proxy_a2a_url = urlunparse((
+        parsed.scheme,
+        new_netloc,
+        new_path,
+        parsed.params,
+        parsed.query,
+        parsed.fragment
+    ))
     
     trace.info("A2A proxy URL: %s", proxy_a2a_url)
     
-    # Step 3: Authenticate (get Bearer token via agent card URL)
+    # Step 3: Authenticate via DID WBA
     auth_success = await did_auth.authenticate(agent_card_url)
     if auth_success:
         trace.info("DID WBA authentication completed")
     else:
         trace.info("DID WBA authentication failed, will try signature headers")
     
-    # Step 4: Get auth headers for POST (uses cached Bearer or falls back to signature)
+    # Step 4: Get auth headers for POST
     auth_headers = did_auth.get_auth_headers(proxy_a2a_url, method="POST")
     
     # Step 5: POST A2A task
