@@ -121,8 +121,17 @@ class ANPDiscoveryClient:
     
     async def get_a2a_url(self, agent_ad_url: str) -> Optional[str]:
         """Extract A2A interface URL from Agent Description."""
+        # Fix the service name if it's missing the -svc suffix
+        # e.g., translator-with-sidecar → translator-with-sidecar-svc
+        fixed_url = agent_ad_url.replace(
+            "translator-with-sidecar.a2a.svc.cluster.local",
+            "translator-with-sidecar-svc.a2a.svc.cluster.local"
+        ).replace(
+            "llm-agent-with-sidecar.a2a.svc.cluster.local",
+            "llm-agent-with-sidecar-svc.a2a.svc.cluster.local"
+        )
         async with httpx.AsyncClient() as client:
-            resp = await client.get(agent_ad_url)
+            resp = await client.get(fixed_url)
             if resp.status_code != 200:
                 return None
             
