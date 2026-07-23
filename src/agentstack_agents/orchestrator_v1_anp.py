@@ -18,15 +18,14 @@ import base64
 import json
 import logging
 import os
-import uuid
+import uuid 
 from typing import Annotated, Optional, Dict, Any
 
 import httpx
-from a2a.types import AgentSkill, Message
+from a2a.types import AgentSkill, Message,SecurityScheme, HTTPAuthSecurityScheme
 from a2a.utils.message import get_message_text
 from openai import AsyncOpenAI
 
-from agentstack_agents.card_security import SECURITY, SECURITY_SCHEMES
 from agentstack_sdk.a2a.extensions.services.llm import LLMServiceExtensionServer, LLMServiceExtensionSpec
 from agentstack_sdk.a2a.extensions.services.platform import PlatformApiExtensionServer, PlatformApiExtensionSpec
 from agentstack_sdk.platform.client import PlatformClient
@@ -54,6 +53,19 @@ LLM_EXTENSION_URI = "https://a2a-extensions.agentstack.beeai.dev/services/llm/v1
 
 _TRANSLATION_KEYWORDS = ("translate", "traducir", "traduce", "übersetz", "traduis", "traduci")
 
+# AGENT CARD SECURITY SCHEMES (ADDED ANP DID WBA SCHEME)
+
+SECURITY_SCHEMES = {
+    "didWba": SecurityScheme(
+        root=HTTPAuthSecurityScheme(
+            scheme="bearer",
+            bearer_format="JWT",
+            description="DID WBA authentication via ANP sidecar",
+        )
+    ),
+}
+
+SECURITY = [{"didWba": []}]
 
 # ── HTTP trace ───────────────────────────────────────────────────────────────
 
@@ -453,4 +465,4 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    run() 
