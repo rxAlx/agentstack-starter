@@ -119,28 +119,6 @@ class ANPDiscoveryClient:
             trace.info("ANP discovered: %s (%s)", agent["name"], agent["did"])
             return agent
     
-    async def get_a2a_url(self, agent_ad_url: str) -> Optional[str]:
-        """
-        Extract A2A proxy URL. Tries AD first, falls back to DID-based construction.
-        """
-        import re
-        
-        # Try to fetch AD first
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            try:
-                resp = await client.get(agent_ad_url)
-                if resp.status_code == 200:
-                    ad = resp.json()
-                    for interface in ad.get("interfaces", []):
-                        if interface.get("protocol") == "a2a":
-                            a2a_url = interface["url"]
-                            return self._convert_to_proxy(a2a_url)
-            except Exception as e:
-                trace.info("AD fetch failed (%s), using fallback", e)
-        
-        # Fallback: construct from ad_url pattern
-        return self._convert_to_proxy(agent_ad_url)
-    
     def _convert_to_proxy(self, url: str) -> Optional[str]:
         """Convert any agent URL to sidecar proxy URL."""
         import re
@@ -191,18 +169,21 @@ class DIDWBAAuthClient:
         )
         
         # Exchange for Bearer Token
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(target_url, headers=headers)
-            
-            if "authentication-info" in resp.headers:
-                self.authenticator.update_token(target_url, dict(resp.headers))
-                auth_info = resp.headers["authentication-info"]
-                if 'access_token="' in auth_info:
-                    token = auth_info.split('access_token="')[1].split('"')[0]
-                    self.token_cache[target_url] = token
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(target_url, headers=headers)
                 
-                # Return Bearer headers
-                return self.authenticator.get_auth_header(target_url)
+                if "authentication-info" in resp.headers:
+                    self.authenticator.update_token(target_url, dict(resp.headers))
+                    auth_info = resp.headers["authentication-info"]
+                    if 'access_token="' in auth_info:
+                        token = auth_info.split('access_token="')[1].split('"')[0]
+                        self.token_cache[target_url] = token
+                    
+                    # Return Bearer headers
+                    return self.authenticator.get_auth_header(target_url)
+        except Exception as e:
+            trace.info("DID WBA auth exchange failed (%s), using signature headers", e)
         
         return headers
 
@@ -295,23 +276,36 @@ async def _call_agent_anp(
     model: str,
 ) -> str:
     """
-    A2A agent-to-agent call with DID WBA authentication:
-      orchestrator → ANP sidecar proxy → callee agent
+    A2A agent-to-agent call with DID WBA authentication.
     """
     
-    # Get A2A proxy URL from AD
-    discovery = ANPDiscoveryClient(ANP_REGISTRY_URL)
-    proxy_url = await discovery.get_a2a_url(agent_info["ad_url"])
-    if not proxy_url:
-        return "[failed to resolve A2A proxy URL from AD]"
+    # Extract hostname from DID: did:wba:<hostname>:agent:<key>
+    did = agent_info.get("did", "")
+    import re
+    did_match = re.match(r'did:wba:([^:]+)', did)
+    if not did_match:
+        return "[invalid DID format, cannot determine agent host]"
     
-    trace.info("A2A proxy URL: %s", proxy_url)
+    did_hostname = did_match.group(1)  # e.g., "translator-with-sidecar.a2a.svc.cluster.local"
+    
+    # Fix hostname: add -svc suffix if missing
+    parts = did_hostname.split('.')
+    service_name = parts[0]
+    if not service_name.endswith('-svc'):
+        parts[0] = f"{service_name}-svc"
+        fixed_hostname = '.'.join(parts)
+    else:
+        fixed_hostname = did_hostname
+    
+    # Build proxy URL directly from fixed hostname
+    proxy_url = f"http://{fixed_hostname}:8001/a2a-proxy/.well-known/agent-card.json"
+    trace.info("A2A proxy URL (from DID): %s", proxy_url)
     
     # Authenticate via DID WBA
     auth_headers = await did_auth.get_auth_headers(proxy_url)
     trace.info("DID WBA authentication completed")
     
-    # A2A task payload
+    # A2A task payload (rest stays the same)
     payload = {
         "jsonrpc": "2.0",
         "method": "message/send",
@@ -352,7 +346,7 @@ async def _call_agent_anp(
                     if part.get("kind") == "text":
                         answer += part["text"]
 
-        if not answer and task.get("status", {}).get("state") == "failed":
+        if not answer and task.get("status", {}).state == "failed":
             status_msg = task.get("status", {}).get("message") or {}
             error_text = "".join(
                 part.get("text", "")
