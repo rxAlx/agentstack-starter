@@ -377,9 +377,12 @@ def _make_registration_client() -> PlatformClient:
 def run():
     try:
         server.run(
-            url=os.getenv("SERVER_URL"),
-            host=os.getenv("HOST", "127.0.0.1"),
-            port=int(os.getenv("PORT", 8003)),
+            url="http://orchestrator-v1-anp-svc:8000",
+            #url=os.getenv("SERVER_URL"),
+            # host=os.getenv("HOST", "127.0.0.1"),
+            # port=int(os.getenv("PORT", 8003)),
+            host="0.0.0.0",
+            port=8000,
             self_registration_client_factory=_make_registration_client,
         )
     except KeyboardInterrupt:
