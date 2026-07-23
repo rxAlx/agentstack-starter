@@ -446,7 +446,7 @@ async def orchestrator_v1_anp(
         # Delegate via A2A + DID WBA
         if did_auth:
             yield await _call_agent_anp(
-                agent['ad_url'],
+                agent,
                 subtask,
                 did_auth,
                 fulfillment.api_base,
