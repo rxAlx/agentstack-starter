@@ -50,6 +50,7 @@ _admin_password = os.getenv("AGENTSTACK_ADMIN_PASSWORD", "")
 PLATFORM_AUTH = "Basic " + base64.b64encode(f"{_admin_user}:{_admin_password}".encode()).decode()
 
 LLM_EXTENSION_URI = "https://a2a-extensions.agentstack.beeai.dev/services/llm/v1"
+PLATFORM_EXTENSION_URI = "https://a2a-extensions.agentstack.beeai.dev/services/platform_api/v1"
 
 _TRANSLATION_KEYWORDS = ("translate", "traducir", "traduce", "übersetz", "traduis", "traduci")
 
@@ -390,7 +391,11 @@ async def _call_agent_anp(
                                 "api_model": model,
                             }
                         }
-                    }
+                    },
+                    PLATFORM_EXTENSION_URI: {
+                        "platform_url": PLATFORM_URL,
+                        "auth_header": PLATFORM_AUTH,
+                    },
                 },
             }
         },
