@@ -1,0 +1,20 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Install dependencies (same as original orchestrator + anp)
+RUN pip install --no-cache-dir \
+    agentstack-sdk \
+    openai \
+    httpx \
+    anp \
+    fastapi \
+    uvicorn
+
+# Copy orchestrator code
+COPY agentstack_agents/ ./agentstack_agents/
+COPY orchestrator_v1_anp.py .
+
+EXPOSE 8000
+
+CMD ["python", "orchestrator_v1_anp.py"]
