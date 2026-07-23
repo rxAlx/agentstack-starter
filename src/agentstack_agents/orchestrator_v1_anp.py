@@ -92,6 +92,52 @@ async def _trace_response(response: httpx.Response) -> None:
 _TRACE_HOOKS = {"request": [_trace_request], "response": [_trace_response]}
 
 
+# ── Platform context token ───────────────────────────────────────────────────
+
+def _platform_headers() -> dict:
+    """Build auth headers for platform API calls."""
+    base = {"Authorization": PLATFORM_AUTH}
+    public_host = os.getenv("PLATFORM_PUBLIC_HOST")
+    if public_host:
+        base["Host"] = public_host
+    return base
+
+
+async def _create_context_token() -> str:
+    """
+    Mint a context token for the A2A hops.
+
+    The platform proxy only fulfills the platform_api extension when the caller
+    authenticates with a context token (Bearer) — with Basic auth the callee
+    fails with "Platform extension metadata was not provided".
+
+    When routing through the ANP sidecar (bypassing the platform proxy), we
+    must provide this token explicitly in the message metadata.
+    """
+    async with httpx.AsyncClient(
+        headers=_platform_headers(),
+        timeout=10.0,
+        event_hooks=_TRACE_HOOKS,
+    ) as http_client:
+        resp = await http_client.post(f"{PLATFORM_URL}/api/v1/contexts", json={})
+        resp.raise_for_status()
+        context_id = resp.json()["id"]
+
+        resp = await http_client.post(
+            f"{PLATFORM_URL}/api/v1/contexts/{context_id}/token",
+            json={
+                "grant_global_permissions": {"llm": ["*"], "a2a_proxy": ["*"]},
+                "grant_context_permissions": {
+                    "files": ["*"],
+                    "vector_stores": ["*"],
+                    "context_data": ["*"],
+                },
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["token"]
+
+
 # ── ANP Discovery Client ─────────────────────────────────────────────────────
 
 class ANPDiscoveryClient:
@@ -304,6 +350,11 @@ async def _call_agent_anp(
 ) -> str:
     """
     A2A agent-to-agent call with DID WBA authentication.
+
+    Since the ANP sidecar bypasses the platform proxy, we must mint a
+    platform context token ourselves and embed it as 'auth_token' in the
+    PlatformApiExtensionMetadata.  Without this, the receiving agent's
+    SDK raises "Platform extension metadata was not provided".
     """
     
     # Build fixed hostname from DID
@@ -372,7 +423,19 @@ async def _call_agent_anp(
     # Step 4: Get auth headers for POST
     auth_headers = did_auth.get_auth_headers(proxy_a2a_url, method="POST")
     
-    # Step 5: POST A2A task
+    # Step 5: Mint a platform context token
+    # The ANP sidecar is a dumb proxy — it doesn't inject the platform
+    # extension metadata like the AgentStack platform proxy does.
+    # We must create a context token and embed it in the message metadata
+    # so the receiving agent's PlatformApiExtensionServer can authenticate.
+    try:
+        context_token = await _create_context_token()
+        trace.info("Platform context token minted for ANP hop")
+    except Exception as e:
+        trace.info("Failed to mint context token: %s", e)
+        return f"[failed to mint platform context token: {e}]"
+    
+    # Step 6: POST A2A task
     payload = {
         "jsonrpc": "2.0",
         "method": "message/send",
@@ -393,8 +456,8 @@ async def _call_agent_anp(
                         }
                     },
                     PLATFORM_EXTENSION_URI: {
-                        "platform_url": PLATFORM_URL,
-                        "auth_header": PLATFORM_AUTH,
+                        "base_url": PLATFORM_URL,
+                        "auth_token": context_token,
                     },
                 },
             }
