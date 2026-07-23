@@ -120,34 +120,49 @@ class ANPDiscoveryClient:
             return agent
     
     async def get_a2a_url(self, agent_ad_url: str) -> Optional[str]:
-        """Extract A2A interface URL from Agent Description."""
-        # Fix the service name if it's missing the -svc suffix
-        # e.g., translator-with-sidecar → translator-with-sidecar-svc
-        fixed_url = agent_ad_url.replace(
-            "translator-with-sidecar.a2a.svc.cluster.local",
-            "translator-with-sidecar-svc.a2a.svc.cluster.local"
-        ).replace(
-            "llm-agent-with-sidecar.a2a.svc.cluster.local",
-            "llm-agent-with-sidecar-svc.a2a.svc.cluster.local"
-        )
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(fixed_url)
-            if resp.status_code != 200:
-                return None
-            
-            ad = resp.json()
-            for interface in ad.get("interfaces", []):
-                if interface.get("protocol") == "a2a":
-                    # Convert internal URL to proxy URL
-                    # e.g., http://translator-svc:8000/.well-known/agent.json
-                    # → http://translator-svc:8001/a2a-proxy/.well-known/agent-card.json
-                    a2a_url = interface["url"]
-                    # Replace port 8000 with 8001 (sidecar) and add /a2a-proxy
-                    proxy_url = a2a_url.replace(":8000", ":8001")
-                    proxy_url = proxy_url.replace("/.well-known/agent.json", "/a2a-proxy/.well-known/agent-card.json")
-                    return proxy_url
-            
+        """
+        Extract A2A proxy URL. Tries AD first, falls back to DID-based construction.
+        """
+        import re
+        
+        # Try to fetch AD first
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                resp = await client.get(agent_ad_url)
+                if resp.status_code == 200:
+                    ad = resp.json()
+                    for interface in ad.get("interfaces", []):
+                        if interface.get("protocol") == "a2a":
+                            a2a_url = interface["url"]
+                            return self._convert_to_proxy(a2a_url)
+            except Exception as e:
+                trace.info("AD fetch failed (%s), using fallback", e)
+        
+        # Fallback: construct from ad_url pattern
+        return self._convert_to_proxy(agent_ad_url)
+    
+    def _convert_to_proxy(self, url: str) -> Optional[str]:
+        """Convert any agent URL to sidecar proxy URL."""
+        import re
+        
+        match = re.match(r'http://([^/:]+)', url)
+        if not match:
             return None
+        
+        hostname = match.group(1)
+        parts = hostname.split('.')
+        service_name = parts[0]
+        
+        # Ensure -svc suffix
+        if not service_name.endswith('-svc'):
+            parts[0] = f"{service_name}-svc"
+            hostname = '.'.join(parts)
+        
+        # If hostname has no dots, add full cluster domain
+        if '.' not in hostname:
+            hostname = f"{hostname}.a2a.svc.cluster.local"
+        
+        return f"http://{hostname}:8001/a2a-proxy/.well-known/agent-card.json"
 
 
 # ── DID WBA Authentication ──────────────────────────────────────────────────
@@ -272,7 +287,7 @@ async def _discover_agents_anp(skill: str) -> Optional[Dict[str, Any]]:
 # ── 3. DELEGATE (A2A + DID WBA) ────────────────────────────────────────────
 
 async def _call_agent_anp(
-    agent_ad_url: str,
+    agent_info: Dict[str, Any],
     text: str,
     did_auth: DIDWBAAuthClient,
     api_base: str,
@@ -286,7 +301,7 @@ async def _call_agent_anp(
     
     # Get A2A proxy URL from AD
     discovery = ANPDiscoveryClient(ANP_REGISTRY_URL)
-    proxy_url = await discovery.get_a2a_url(agent_ad_url)
+    proxy_url = await discovery.get_a2a_url(agent_info["ad_url"])
     if not proxy_url:
         return "[failed to resolve A2A proxy URL from AD]"
     
