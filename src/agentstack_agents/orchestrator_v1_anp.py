@@ -155,38 +155,64 @@ class DIDWBAAuthClient:
         )
         self.token_cache: Dict[str, str] = {}
     
-    async def get_auth_headers(self, target_url: str) -> Dict[str, str]:
-        """Get authentication headers for a target URL."""
-        # Check cached token
-        if target_url in self.token_cache:
-            return {"Authorization": f"Bearer {self.token_cache[target_url]}"}
-        
-        # First auth: HTTP Message Signatures
+    async def authenticate(self, agent_card_url: str) -> bool:
+        """
+        Perform initial DID WBA authentication to get a Bearer token.
+        Call this once per target agent before making A2A calls.
+        """
+        # Generate HTTP Signature headers for GET
         headers = self.authenticator.get_auth_header(
-            target_url,
+            agent_card_url,
             force_new=True,
             method="GET",
         )
         
-        # Exchange for Bearer Token
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(target_url, headers=headers)
+                resp = await client.get(agent_card_url, headers=headers)
                 
-                if "authentication-info" in resp.headers:
-                    self.authenticator.update_token(target_url, dict(resp.headers))
+                if resp.status_code == 200 and "authentication-info" in resp.headers:
+                    self.authenticator.update_token(agent_card_url, dict(resp.headers))
                     auth_info = resp.headers["authentication-info"]
                     if 'access_token="' in auth_info:
                         token = auth_info.split('access_token="')[1].split('"')[0]
-                        self.token_cache[target_url] = token
-                    
-                    # Return Bearer headers
-                    return self.authenticator.get_auth_header(target_url)
+                        # Cache by base URL (without path) so it works for all endpoints on same host
+                        base_url = self._get_base_url(agent_card_url)
+                        self.token_cache[base_url] = token
+                        trace.info("DID WBA token obtained for %s", base_url)
+                        return True
         except Exception as e:
-            trace.info("DID WBA auth exchange failed (%s), using signature headers", e)
+            trace.info("DID WBA auth exchange failed: %s", e)
         
-        return headers
-
+        return False
+    
+    def get_auth_headers(self, target_url: str, method: str = "POST") -> Dict[str, str]:
+        """
+        Get auth headers for a request.
+        If we have a cached Bearer token for this host, use it.
+        Otherwise, fall back to HTTP Signature headers.
+        """
+        base_url = self._get_base_url(target_url)
+        
+        # Check for cached Bearer token
+        if base_url in self.token_cache:
+            trace.info("Using cached Bearer token for %s", base_url)
+            return {"Authorization": f"Bearer {self.token_cache[base_url]}"}
+        
+        # No cached token - generate HTTP Signature for the specific method
+        trace.info("No cached token for %s, using HTTP Signature", base_url)
+        return self.authenticator.get_auth_header(
+            target_url,
+            force_new=True,
+            method=method,
+        )
+    
+    @staticmethod
+    def _get_base_url(url: str) -> str:
+        """Extract base URL (scheme + host + port) without path."""
+        import re
+        match = re.match(r'(https?://[^/]+)', url)
+        return match.group(1) if match else url
 
 # ── 1. PLAN ─────────────────────────────────────────────────────────────────
 
@@ -279,16 +305,14 @@ async def _call_agent_anp(
     A2A agent-to-agent call with DID WBA authentication.
     """
     
-    # Extract hostname from DID: did:wba:<hostname>:agent:<key>
+    # Build fixed hostname from DID
     did = agent_info.get("did", "")
     import re
     did_match = re.match(r'did:wba:([^:]+)', did)
     if not did_match:
-        return "[invalid DID format, cannot determine agent host]"
+        return "[invalid DID format]"
     
-    did_hostname = did_match.group(1)  # e.g., "translator-with-sidecar.a2a.svc.cluster.local"
-    
-    # Fix hostname: add -svc suffix if missing
+    did_hostname = did_match.group(1)
     parts = did_hostname.split('.')
     service_name = parts[0]
     if not service_name.endswith('-svc'):
@@ -297,15 +321,40 @@ async def _call_agent_anp(
     else:
         fixed_hostname = did_hostname
     
-    # Build proxy URL directly from fixed hostname
-    proxy_url = f"http://{fixed_hostname}:8001/a2a-proxy/.well-known/agent-card.json"
-    trace.info("A2A proxy URL (from DID): %s", proxy_url)
+    # Step 1: Fetch agent card to get the actual A2A URL
+    agent_card_url = f"http://{fixed_hostname}:8001/a2a-proxy/.well-known/agent-card.json"
+    trace.info("Fetching agent card from: %s", agent_card_url)
     
-    # Authenticate via DID WBA
-    auth_headers = await did_auth.get_auth_headers(proxy_url)
-    trace.info("DID WBA authentication completed")
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(agent_card_url)
+        if resp.status_code != 200:
+            return f"[failed to fetch agent card: {resp.status_code}]"
+        
+        agent_card = resp.json()
+        a2a_url = agent_card.get("url")
+        if not a2a_url:
+            return "[no A2A URL in agent card]"
+        
+        trace.info("A2A endpoint from agent card: %s", a2a_url)
     
-    # A2A task payload (rest stays the same)
+    # Step 2: Convert to proxy URL (port 8000 -> 8001, fix hostname)
+    proxy_a2a_url = a2a_url.replace(":8000", ":8001")
+    original_host = a2a_url.split("//")[1].split(":")[0]
+    proxy_a2a_url = proxy_a2a_url.replace(original_host, fixed_hostname)
+    
+    trace.info("A2A proxy URL: %s", proxy_a2a_url)
+    
+    # Step 3: Authenticate (get Bearer token via agent card URL)
+    auth_success = await did_auth.authenticate(agent_card_url)
+    if auth_success:
+        trace.info("DID WBA authentication completed")
+    else:
+        trace.info("DID WBA authentication failed, will try signature headers")
+    
+    # Step 4: Get auth headers for POST (uses cached Bearer or falls back to signature)
+    auth_headers = did_auth.get_auth_headers(proxy_a2a_url, method="POST")
+    
+    # Step 5: POST A2A task
     payload = {
         "jsonrpc": "2.0",
         "method": "message/send",
@@ -332,7 +381,7 @@ async def _call_agent_anp(
 
     async with httpx.AsyncClient(event_hooks=_TRACE_HOOKS, timeout=60.0) as client:
         resp = await client.post(
-            proxy_url,
+            proxy_a2a_url,
             json=payload,
             headers={**auth_headers, "Content-Type": "application/json"},
         )
@@ -346,7 +395,7 @@ async def _call_agent_anp(
                     if part.get("kind") == "text":
                         answer += part["text"]
 
-        if not answer and task.get("status", {}).state == "failed":
+        if not answer and task.get("status", {}).get("state") == "failed":
             status_msg = task.get("status", {}).get("message") or {}
             error_text = "".join(
                 part.get("text", "")
