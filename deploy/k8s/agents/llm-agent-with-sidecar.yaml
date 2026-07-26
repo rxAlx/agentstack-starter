@@ -1,41 +1,39 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: orchestrator-with-sidecar 
+  name: llm-agent-with-sidecar 
   namespace: a2a
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: orchestrator-with-sidecar
+      app: llm-agent-with-sidecar
   template:
     metadata:
       labels:
-        app: orchestrator-with-sidecar
+        app: llm-agent-with-sidecar
     spec:
       containers:
-        - name: orchestrator-with-sidecar
-          # GHCR (CI/CD): release with `git tag orchestrator-v1_v1.0.0 && git push origin orchestrator-v1_v1.0.0`
-          # Local minikube test: ghcr.io/rxalx/agentstack-starter/orchestrator-v1:dev + imagePullPolicy: IfNotPresent
-          image: ghcr.io/rxalx/agentstack-starter/orchestrator-v1:v1.0.0
+        - name: llm-agent-with-sidecar
+          # GHCR (CI/CD): ghcr.io/rxalx/agentstack-starter/llm-agent:latest
+          # Local minikube: agentstack/llm-agent:local  +  imagePullPolicy: Never
+          image: ghcr.io/rxalx/agentstack-starter/llm-agent:v1.0.0
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:
             - name: HOST
-              value: "0.0.0.0"   # safe now that self-registration is off; enables kubectl port-forward for demos
+              value: "0.0.0.0"   # safe now that self-registration is off; enables kubectl port-forward for demos   # uvicorn binds + self-registers at pod IP
             - name: PORT
               value: "8000"
             - name: SERVER_URL
-              value: "http://orchestrator-with-sidecar-svc:8000"
+              value: "http://llm-agent-with-sidecar-svc:8000"   # reported in agent card URL
             - name: PLATFORM_URL
               value: "http://agentstack-server-svc:8333"
             - name: PLATFORM_PUBLIC_HOST
               value: "localhost:8333"
             - name: PRODUCTION_MODE
               value: "True"    # self-registration off; register once via register-agents.sh (stable svc URL)
-            - name: A2A_TRACE
-              value: "1"       # log every GET/POST of the A2A flow to stdout (kubectl logs)
             - name: AGENTSTACK_ADMIN_USER
               value: "admin"
             - name: AGENTSTACK_ADMIN_PASSWORD
@@ -58,13 +56,13 @@ spec:
             - containerPort: 8001
           env:
             - name: AGENT_NAME
-              value: "orchestrator"
+              value: "llm-agent-with-sidecar"
             - name: AGENT_DESCRIPTION
-              value: "Multi-agent workflow orchestrator"
+              value: "LLM base agent for multi-agent workflows"
             - name: AGENT_TYPE
-              value: "Orchestrator"
+              value: "LLM Agent"
             - name: AGENT_SKILLS
-              value: "workflow,coordination,planning"
+              value: "nlp, text-generation, summarization"
             - name: AGENT_PORT
               value: "8001"
             - name: MAIN_AGENT_PORT
@@ -92,11 +90,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: orchestrator-with-sidecar-svc
+  name: llm-agent-with-sidecar-svc
   namespace: a2a
 spec:
   selector:
-    app: orchestrator-with-sidecar
+    app: llm-agent-with-sidecar
   ports:
     - name: a2a
       port: 8000

@@ -1,41 +1,40 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: orchestrator-with-sidecar 
+  name: orchestrator-v1-anp
   namespace: a2a
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: orchestrator-with-sidecar
+      app: orchestrator-v1-anp
   template:
     metadata:
       labels:
-        app: orchestrator-with-sidecar
+        app: orchestrator-v1-anp
     spec:
       containers:
-        - name: orchestrator-with-sidecar
-          # GHCR (CI/CD): release with `git tag orchestrator-v1_v1.0.0 && git push origin orchestrator-v1_v1.0.0`
-          # Local minikube test: ghcr.io/rxalx/agentstack-starter/orchestrator-v1:dev + imagePullPolicy: IfNotPresent
-          image: ghcr.io/rxalx/agentstack-starter/orchestrator-v1:v1.0.0
-          imagePullPolicy: Always
+        # Main A2A Agent: Orchestrator v1 with ANP
+        - name: orchestrator-v1-anp
+          image: ghcr.io/rxalx/agentstack-starter/orchestrator-v1-anp:v1.1.0    
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           env:
             - name: HOST
-              value: "0.0.0.0"   # safe now that self-registration is off; enables kubectl port-forward for demos
+              value: "0.0.0.0"
             - name: PORT
               value: "8000"
             - name: SERVER_URL
-              value: "http://orchestrator-with-sidecar-svc:8000"
+              value: "http://orchestrator-v1-anp-svc:8000"
             - name: PLATFORM_URL
               value: "http://agentstack-server-svc:8333"
             - name: PLATFORM_PUBLIC_HOST
               value: "localhost:8333"
             - name: PRODUCTION_MODE
-              value: "True"    # self-registration off; register once via register-agents.sh (stable svc URL)
+              value: "True" # self-registration off; register once via register-agents.sh (stable svc URL)
             - name: A2A_TRACE
-              value: "1"       # log every GET/POST of the A2A flow to stdout (kubectl logs)
+              value: "1"
             - name: AGENTSTACK_ADMIN_USER
               value: "admin"
             - name: AGENTSTACK_ADMIN_PASSWORD
@@ -43,28 +42,38 @@ spec:
                 secretKeyRef:
                   name: agentstack-agents-secret
                   key: admin-password
+            # ANP Configuration
+            - name: ANP_REGISTRY_URL
+              value: "http://anp-registry:8080"
+            - name: ORCHESTRATOR_DID_PATH
+              value: "/app/did/did.json"
+            - name: ORCHESTRATOR_KEY_PATH
+              value: "/app/did/private-key.pem"
           readinessProbe:
             httpGet:
               path: /.well-known/agent-card.json
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 10
+          volumeMounts:
+            - name: did-storage
+              mountPath: /app/did
         
         # ANP Sidecar
         - name: anp-sidecar
           image: ghcr.io/rxalx/agentstack-starter/anp-sidecar:v1.0.3
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8001
           env:
             - name: AGENT_NAME
-              value: "orchestrator"
+              value: "orchestrator-v1-anp"
             - name: AGENT_DESCRIPTION
-              value: "Multi-agent workflow orchestrator"
+              value: "Orchestrator with ANP discovery and DID WBA authentication"
             - name: AGENT_TYPE
               value: "Orchestrator"
             - name: AGENT_SKILLS
-              value: "workflow,coordination,planning"
+              value: "workflow,coordination,planning,orchestration"
             - name: AGENT_PORT
               value: "8001"
             - name: MAIN_AGENT_PORT
@@ -84,6 +93,7 @@ spec:
           volumeMounts:
             - name: did-storage
               mountPath: /app/did
+      
       volumes:
         - name: did-storage
           emptyDir: {}
@@ -92,11 +102,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: orchestrator-with-sidecar-svc
+  name: orchestrator-v1-anp-svc
   namespace: a2a
 spec:
   selector:
-    app: orchestrator-with-sidecar
+    app: orchestrator-v1-anp
   ports:
     - name: a2a
       port: 8000
